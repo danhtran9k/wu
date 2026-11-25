@@ -1398,6 +1398,9 @@
   // The column at which to soft-wrap lines, for buffers where soft-wrap
   // is enabled.
   "preferred_line_length": 80,
+  // Whether to also soft-wrap lines right after each escaped line feed (`\n`),
+  // e.g. inside JSON strings. Only applies when soft-wrap is enabled.
+  "wrap_on_escaped_newlines": false,
   // Whether to indent lines using tab characters, as opposed to multiple
   // spaces.
   "hard_tabs": false,

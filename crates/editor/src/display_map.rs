@@ -1252,6 +1252,11 @@ impl DisplayMap {
             .update(cx, |map, cx| map.set_wrap_width(width, cx))
     }
 
+    pub fn set_wrap_on_escaped_newlines(&self, enabled: bool, cx: &mut Context<Self>) -> bool {
+        self.wrap_map
+            .update(cx, |map, cx| map.set_wrap_on_escaped_newlines(enabled, cx))
+    }
+
     #[instrument(skip_all)]
     pub fn update_fold_widths(
         &mut self,

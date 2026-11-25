@@ -46,6 +46,7 @@ pub struct WrapMap {
     interpolated_edits: WrapPatch,
     edits_since_sync: WrapPatch,
     wrap_width: Option<Pixels>,
+    wrap_on_escaped_newlines: bool,
     background_task: Option<Task<()>>,
     font_with_size: (Font, Pixels),
 }
@@ -189,6 +190,7 @@ impl WrapMap {
             let mut this = Self {
                 font_with_size: (font, font_size),
                 wrap_width: None,
+                wrap_on_escaped_newlines: false,
                 pending_edits: Default::default(),
                 interpolated_edits: Default::default(),
                 edits_since_sync: Default::default(),
@@ -267,6 +269,16 @@ impl WrapMap {
         true
     }
 
+    pub fn set_wrap_on_escaped_newlines(&mut self, enabled: bool, cx: &mut Context<Self>) -> bool {
+        if enabled == self.wrap_on_escaped_newlines {
+            return false;
+        }
+
+        self.wrap_on_escaped_newlines = enabled;
+        self.rewrap(cx);
+        true
+    }
+
     #[ztracing::instrument(skip_all)]
     fn rewrap(&mut self, cx: &mut Context<Self>) {
         self.background_task.take();
@@ -281,6 +293,7 @@ impl WrapMap {
             let mut fragment_builder =
                 LineFragmentBuilder::new(text_system.clone(), &font, font_size);
             let mut line_wrapper = text_system.line_wrapper(font, font_size);
+            let wrap_on_escaped_newlines = self.wrap_on_escaped_newlines;
             let tab_snapshot = new_snapshot.tab_snapshot.clone();
             let total_rows = tab_snapshot.max_point().row() as usize + 1;
             let range = TabPoint::zero()..tab_snapshot.max_point();
@@ -294,6 +307,7 @@ impl WrapMap {
                     tab_snapshot,
                     &tab_edits,
                     wrap_width,
+                    wrap_on_escaped_newlines,
                     &mut line_wrapper,
                     &mut fragment_builder,
                 ));
@@ -306,6 +320,7 @@ impl WrapMap {
                             tab_snapshot,
                             &tab_edits,
                             wrap_width,
+                            wrap_on_escaped_newlines,
                             &mut line_wrapper,
                             &mut fragment_builder,
                         )
@@ -385,6 +400,7 @@ impl WrapMap {
             let mut fragment_builder =
                 LineFragmentBuilder::new(text_system.clone(), &font, font_size);
             let mut line_wrapper = text_system.line_wrapper(font, font_size);
+            let wrap_on_escaped_newlines = self.wrap_on_escaped_newlines;
 
             let update_passes = pending_edits.len();
             let total_new_rows = pending_edits
@@ -399,6 +415,7 @@ impl WrapMap {
                         tab_snapshot,
                         &tab_edits,
                         wrap_width,
+                        wrap_on_escaped_newlines,
                         &mut line_wrapper,
                         &mut fragment_builder,
                     ));
@@ -415,6 +432,7 @@ impl WrapMap {
                                 tab_snapshot,
                                 &tab_edits,
                                 wrap_width,
+                                wrap_on_escaped_newlines,
                                 &mut line_wrapper,
                                 &mut fragment_builder,
                             )
@@ -467,6 +485,19 @@ impl WrapMap {
         if !was_interpolated {
             self.pending_edits.drain(..to_remove_len);
         }
+    }
+}
+
+/// Byte offsets just after each escaped line feed (`\n`) in `line`, excluding ones
+/// that end the line, so the soft wrap can start a new display row there.
+fn escaped_newline_breaks(line: &str, breaks: &mut Vec<usize>) {
+    let content_end = line.trim_end_matches(['\n', '\r']).len();
+    let mut backslashes = 0;
+    for (ix, &byte) in line.as_bytes()[..content_end].iter().enumerate() {
+        if byte == b'n' && backslashes % 2 == 1 && ix + 1 < content_end {
+            breaks.push(ix + 1);
+        }
+        backslashes = if byte == b'\\' { backslashes + 1 } else { 0 };
     }
 }
 
@@ -562,6 +593,7 @@ impl WrapSnapshot {
         new_tab_snapshot: TabSnapshot,
         tab_edits: &[TabEdit],
         wrap_width: Pixels,
+        wrap_on_escaped_newlines: bool,
         line_wrapper: &mut LineWrapper,
         fragment_builder: &mut LineFragmentBuilder,
     ) -> WrapPatch {
@@ -617,6 +649,7 @@ impl WrapSnapshot {
 
                 let mut line = String::new();
                 let mut line_fragments = Vec::new();
+                let mut forced_breaks = Vec::new();
                 let mut remaining = None;
                 let mut chunks = new_tab_snapshot.chunks(
                     TabPoint::new(edit.new_rows.start, 0)..new_tab_snapshot.max_point(),
@@ -655,8 +688,17 @@ impl WrapSnapshot {
                         break;
                     }
 
+                    forced_breaks.clear();
+                    if wrap_on_escaped_newlines {
+                        escaped_newline_breaks(&line, &mut forced_breaks);
+                    }
+
                     let mut prev_boundary_ix = 0;
-                    for boundary in line_wrapper.wrap_line(&line_fragments, wrap_width) {
+                    for boundary in line_wrapper.wrap_line_with_forced_breaks(
+                        &line_fragments,
+                        wrap_width,
+                        &forced_breaks,
+                    ) {
                         let wrapped = &line[prev_boundary_ix..boundary.ix];
                         push_isomorphic(&mut edit_transforms, TextSummary::from(wrapped));
                         edit_transforms.push(Transform::wrap(boundary.next_indent));
@@ -1476,6 +1518,56 @@ mod tests {
     use std::{cmp, env, num::NonZeroU32};
     use text::Rope;
     use theme::LoadThemes;
+
+    #[test]
+    fn test_escaped_newline_breaks() {
+        fn breaks(line: &str) -> Vec<usize> {
+            let mut breaks = Vec::new();
+            escaped_newline_breaks(line, &mut breaks);
+            breaks
+        }
+
+        assert_eq!(breaks(r#""a\nb\nc""#), [4, 7]);
+        assert_eq!(breaks(r#""a\\nb""#), Vec::<usize>::new());
+        assert_eq!(breaks(r#""a\\\nb""#), [6]);
+        assert_eq!(breaks("a\\n\n"), Vec::<usize>::new());
+        assert_eq!(breaks("no escapes\n"), Vec::<usize>::new());
+    }
+
+    #[gpui::test]
+    async fn test_wrap_on_escaped_newlines(cx: &mut gpui::TestAppContext) {
+        init_test(cx);
+
+        let text = "{\n  \"d\": \"ab\\ncd\\nef\",\n  \"e\": \"x\\\\ny\"\n}";
+        let text_system = cx.read(|cx| cx.text_system().clone());
+        let font = test_font();
+        let _font_id = text_system.resolve_font(&font);
+        let buffer = cx.new(|cx| language::Buffer::local(text, cx));
+        let buffer = cx.new(|cx| MultiBuffer::singleton(buffer, cx));
+        let buffer_snapshot = buffer.read_with(cx, |buffer, cx| buffer.snapshot(cx));
+        let (_inlay_map, inlay_snapshot) = InlayMap::new(buffer_snapshot);
+        let (_fold_map, fold_snapshot) = FoldMap::new(inlay_snapshot);
+        let (_tab_map, tab_snapshot) = TabMap::new(fold_snapshot, 4.try_into().unwrap());
+        let (wrap_map, _) =
+            cx.update(|cx| WrapMap::new(tab_snapshot, font, px(14.), Some(px(10000.)), cx));
+
+        let snapshot = wrap_map.read_with(cx, |map, _| map.snapshot.clone());
+        assert_eq!(snapshot.text(), text);
+
+        wrap_map.update(cx, |map, cx| map.set_wrap_on_escaped_newlines(true, cx));
+        cx.run_until_parked();
+        let snapshot = wrap_map.read_with(cx, |map, _| map.snapshot.clone());
+        assert_eq!(
+            snapshot.text(),
+            "{\n  \"d\": \"ab\\n\n  cd\\n\n  ef\",\n  \"e\": \"x\\\\ny\"\n}"
+        );
+        assert_eq!(snapshot.max_point().row(), WrapRow(5));
+
+        wrap_map.update(cx, |map, cx| map.set_wrap_on_escaped_newlines(false, cx));
+        cx.run_until_parked();
+        let snapshot = wrap_map.read_with(cx, |map, _| map.snapshot.clone());
+        assert_eq!(snapshot.text(), text);
+    }
 
     #[gpui::test]
     async fn test_prev_row_boundary(cx: &mut gpui::TestAppContext) {

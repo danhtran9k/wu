@@ -61,6 +61,8 @@ pub struct LanguageSettings {
     /// The column at which to soft-wrap lines, for buffers where soft-wrap
     /// is enabled.
     pub preferred_line_length: u32,
+    /// Whether to also soft-wrap lines right after each escaped line feed (`\n`).
+    pub wrap_on_escaped_newlines: bool,
     /// Whether to show wrap guides (vertical rulers) in the editor.
     /// Setting this to true will show a guide at the 'preferred_line_length' value
     /// if softwrap is set to 'preferred_line_length', and will show any
@@ -603,6 +605,7 @@ impl settings::Settings for AllLanguageSettings {
                 hard_tabs: settings.hard_tabs.unwrap(),
                 soft_wrap: settings.soft_wrap.unwrap(),
                 preferred_line_length: settings.preferred_line_length.unwrap(),
+                wrap_on_escaped_newlines: settings.wrap_on_escaped_newlines.unwrap(),
                 show_wrap_guides: settings.show_wrap_guides.unwrap(),
                 wrap_guides: settings.wrap_guides.unwrap(),
                 indent_guides: IndentGuideSettings {

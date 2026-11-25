@@ -215,6 +215,11 @@ pub struct LanguageSettingsContent {
     ///
     /// Default: 80
     pub preferred_line_length: Option<u32>,
+    /// Whether to also soft-wrap lines right after each escaped line feed (`\n`),
+    /// e.g. inside JSON strings. Only applies when soft-wrap is enabled.
+    ///
+    /// Default: false
+    pub wrap_on_escaped_newlines: Option<bool>,
     /// Whether to show wrap guides in the editor. Setting this to true will
     /// show a guide at the 'preferred_line_length' value if softwrap is set to
     /// 'preferred_line_length', and will show any additional guides as specified

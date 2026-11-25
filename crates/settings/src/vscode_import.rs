@@ -599,6 +599,7 @@ impl VsCodeSettings {
             document_symbols: None,
             linked_edits: self.read_bool("editor.linkedEditing"),
             preferred_line_length: self.read_u32("editor.wordWrapColumn"),
+            wrap_on_escaped_newlines: self.read_bool("editor.wrapOnEscapedLineFeeds"),
             prettier: None,
             remove_trailing_whitespace_on_save: self.read_bool("editor.trimAutoWhitespace"),
             show_completion_documentation: None,

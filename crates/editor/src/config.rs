@@ -295,8 +295,16 @@ impl Editor {
                     display_map.update(cx, |map, cx| map.set_wrap_width(width, cx))
                 })
         } else {
-            self.display_map
-                .update(cx, |map, cx| map.set_wrap_width(width, cx))
+            let wrap_on_escaped_newlines = self
+                .buffer
+                .read(cx)
+                .language_settings(cx)
+                .wrap_on_escaped_newlines;
+            self.display_map.update(cx, |map, cx| {
+                let escaped_newlines_changed =
+                    map.set_wrap_on_escaped_newlines(wrap_on_escaped_newlines, cx);
+                map.set_wrap_width(width, cx) || escaped_newlines_changed
+            })
         }
     }
 

@@ -42,6 +42,18 @@ impl LineWrapper {
         fragments: &'a [LineFragment],
         wrap_width: Pixels,
     ) -> impl Iterator<Item = Boundary> + 'a {
+        self.wrap_line_with_forced_breaks(fragments, wrap_width, &[])
+    }
+
+    /// Like [`Self::wrap_line`], but additionally breaks the line at each byte offset in
+    /// `forced_breaks` (which must be sorted ascending), as if the text there was too wide.
+    pub fn wrap_line_with_forced_breaks<'a>(
+        &'a mut self,
+        fragments: &'a [LineFragment],
+        wrap_width: Pixels,
+        forced_breaks: &'a [usize],
+    ) -> impl Iterator<Item = Boundary> + 'a {
+        let mut next_forced_break = 0;
         let mut width = px(0.);
         let mut first_non_whitespace_ix = None;
         let mut indent = None;
@@ -55,7 +67,28 @@ impl LineWrapper {
             .flat_map(move |fragment| fragment.wrap_boundary_candidates())
             .peekable();
         iter::from_fn(move || {
-            for candidate in candidates.by_ref() {
+            loop {
+                if let Some(&forced_ix) = forced_breaks.get(next_forced_break)
+                    && forced_ix <= index
+                {
+                    next_forced_break += 1;
+                    if forced_ix == index && index > last_wrap_ix && candidates.peek().is_some() {
+                        if indent.is_none() {
+                            let first_non_whitespace_ix = first_non_whitespace_ix.unwrap_or(index);
+                            indent = Some(
+                                Self::MAX_INDENT
+                                    .min((first_non_whitespace_ix - last_wrap_ix) as u32),
+                            );
+                        }
+                        last_wrap_ix = index;
+                        last_candidate_ix = 0;
+                        width = self.width_for_char(' ') * indent.unwrap_or(0) as f32;
+                        return Some(Boundary::new(last_wrap_ix, indent.unwrap_or(0)));
+                    }
+                    continue;
+                }
+
+                let candidate = candidates.next()?;
                 let ix = index;
                 index += candidate.len_utf8();
                 let mut new_prev_c = prev_c;
@@ -134,8 +167,6 @@ impl LineWrapper {
 
                 prev_c = new_prev_c;
             }
-
-            None
         })
     }
 
@@ -746,6 +777,42 @@ mod tests {
                 ..Default::default()
             })
             .collect()
+    }
+
+    #[test]
+    fn test_wrap_line_with_forced_breaks() {
+        let mut wrapper = build_wrapper();
+
+        assert_eq!(
+            wrapper
+                .wrap_line_with_forced_breaks(
+                    &[LineFragment::text(r"  ab\ncd\nef")],
+                    px(1000.),
+                    &[6, 10],
+                )
+                .collect::<Vec<_>>(),
+            &[Boundary::new(6, 2), Boundary::new(10, 2)],
+        );
+        assert_eq!(
+            wrapper
+                .wrap_line_with_forced_breaks(
+                    &[LineFragment::text(r"aa\nbbb cccc ddddd")],
+                    px(72.),
+                    &[4],
+                )
+                .collect::<Vec<_>>(),
+            &[
+                Boundary::new(4, 0),
+                Boundary::new(8, 0),
+                Boundary::new(13, 0)
+            ],
+        );
+        assert_eq!(
+            wrapper
+                .wrap_line_with_forced_breaks(&[LineFragment::text("ab")], px(1000.), &[2])
+                .collect::<Vec<_>>(),
+            &[],
+        );
     }
 
     #[test]
