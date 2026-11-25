@@ -590,6 +590,7 @@ impl EditorElement {
         register_action(editor, window, Editor::open_excerpts);
         register_action(editor, window, Editor::open_excerpts_in_split);
         register_action(editor, window, Editor::toggle_soft_wrap);
+        register_action(editor, window, Editor::toggle_wrap_on_escaped_newlines);
         register_action(editor, window, Editor::toggle_tab_bar);
         register_action(editor, window, Editor::toggle_breadcrumb);
         register_action(editor, window, Editor::toggle_line_numbers);

@@ -2847,6 +2847,34 @@ fn test_only_focused_editor_blinks_across_window_activation(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn test_toggle_wrap_on_escaped_newlines(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let editor = cx.add_window(|window, cx| {
+        let buffer = MultiBuffer::build_simple(r#"{"a": "b\nc"}"#, cx);
+        build_editor(buffer, window, cx)
+    });
+
+    _ = editor.update(cx, |editor, window, cx| {
+        assert!(!editor.wrap_on_escaped_newlines(cx));
+        assert!(matches!(editor.soft_wrap_mode(cx), SoftWrap::None));
+        editor.set_wrap_width(Some(10000.0.into()), cx);
+        assert_eq!(editor.display_text(cx), r#"{"a": "b\nc"}"#);
+
+        editor.toggle_wrap_on_escaped_newlines(&ToggleWrapOnEscapedNewlines, window, cx);
+        assert!(editor.wrap_on_escaped_newlines(cx));
+        assert!(matches!(editor.soft_wrap_mode(cx), SoftWrap::EditorWidth));
+        editor.set_wrap_width(Some(10000.0.into()), cx);
+        assert_eq!(editor.display_text(cx), "{\"a\": \"b\\n\nc\"}");
+
+        editor.toggle_wrap_on_escaped_newlines(&ToggleWrapOnEscapedNewlines, window, cx);
+        assert!(!editor.wrap_on_escaped_newlines(cx));
+        editor.set_wrap_width(Some(10000.0.into()), cx);
+        assert_eq!(editor.display_text(cx), r#"{"a": "b\nc"}"#);
+    });
+}
+
+#[gpui::test]
 fn test_beginning_end_of_line_ignore_soft_wrap(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
     let move_to_beg = MoveToBeginningOfLine {

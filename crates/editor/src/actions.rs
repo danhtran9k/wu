@@ -909,6 +909,8 @@ actions!(
         ToggleSelectionMenu,
         /// Toggles soft wrap mode.
         ToggleSoftWrap,
+        /// Toggles soft-wrapping right after each escaped line feed (`\n`), e.g. inside JSON strings.
+        ToggleWrapOnEscapedNewlines,
         /// Toggles the tab bar display.
         ToggleTabBar,
         /// Transposes characters around cursor.

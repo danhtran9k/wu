@@ -295,11 +295,7 @@ impl Editor {
                     display_map.update(cx, |map, cx| map.set_wrap_width(width, cx))
                 })
         } else {
-            let wrap_on_escaped_newlines = self
-                .buffer
-                .read(cx)
-                .language_settings(cx)
-                .wrap_on_escaped_newlines;
+            let wrap_on_escaped_newlines = self.wrap_on_escaped_newlines(cx);
             self.display_map.update(cx, |map, cx| {
                 let escaped_newlines_changed =
                     map.set_wrap_on_escaped_newlines(wrap_on_escaped_newlines, cx);
@@ -318,6 +314,31 @@ impl Editor {
                 SoftWrap::EditorWidth | SoftWrap::Bounded(_) => language_settings::SoftWrap::None,
             };
             self.soft_wrap_mode_override = Some(soft_wrap);
+        }
+        cx.notify();
+    }
+
+    pub fn wrap_on_escaped_newlines(&self, cx: &App) -> bool {
+        self.wrap_on_escaped_newlines_override.unwrap_or_else(|| {
+            self.buffer
+                .read(cx)
+                .language_settings(cx)
+                .wrap_on_escaped_newlines
+        })
+    }
+
+    pub fn toggle_wrap_on_escaped_newlines(
+        &mut self,
+        _: &ToggleWrapOnEscapedNewlines,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let enabled = !self.wrap_on_escaped_newlines(cx);
+        self.wrap_on_escaped_newlines_override = Some(enabled);
+        // Breaking at escaped newlines only happens while soft-wrapping, so turning it on
+        // in an unwrapped editor would otherwise look like the command did nothing.
+        if enabled && matches!(self.soft_wrap_mode(cx), SoftWrap::None) {
+            self.soft_wrap_mode_override = Some(language_settings::SoftWrap::EditorWidth);
         }
         cx.notify();
     }
